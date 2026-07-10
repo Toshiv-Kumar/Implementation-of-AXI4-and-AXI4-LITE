@@ -1,2 +1,123 @@
 # Implementation-of-AXI4-and-AXI4-LITE
 Simplified parameterised AXI4‑Lite and AXI4 wrapper with byte‑enabled synchronous RAM and a randomised testbench. Supports WSTRB, burst‑aware address progression and configurable widths/depths/IDs. Includes a simple RAM model and master_TB for functional verification.
+# AXI4-Full-RAM-Interface
+
+**AXI4-Full Protocol Wrapper for a Single-Port RAM in Verilog HDL**
+A Verilog-based implementation of an **AXI4-Full slave interface** wrapping a single-port RAM, focusing on **burst transactions, byte-strobe writes, FSM-based channel control, and word-vs-byte addressing translation**, verified using a randomized testbench and simulation waveforms.
+
+![AXI4](https://img.shields.io/badge/Protocol-AXI4--Full-blue?style=flat-square) <img src="https://img.shields.io/badge/HDL-Verilog-blue.svg" /> <img src="https://img.shields.io/badge/Domain-Bus%20Protocol%20Design-orange.svg" /> <img src="https://img.shields.io/badge/EDA-Generic%20Simulator-brightgreen.svg" />
+
+---
+
+## 🧩 Overview
+
+This project presents the **design, implementation, and verification of an AXI4-Full slave interface** (`axi_full_wraps_ram`) that sits between an AXI **Master (Manager/CPU)** and a **single-port RAM (Subordinate)**, using Verilog HDL.
+
+The wrapper implements all five AXI4 channels — Write Address (AW), Write Data (W), Write Response (B), Read Address (AR), and Read Data (R) — using independent FSMs for the write and read paths. It handles **INCR burst transactions**, **byte-level write masking (WSTRB)** over a word-addressable RAM, **DECERR** response generation for out-of-range addresses, and **AWID/ARID → BID/RID** pass-through for transaction tracking.
+
+The design is verified using a self-driving, randomized testbench (`master_TB`) that exercises all five channels concurrently using `$urandom()` stimulus.
+
+---
+
+## ✨ Features
+
+* AXI4-Full slave interface wrapping a single-port RAM
+* Full implementation of AW, W, B, AR, and R channels
+* INCR burst mode support with configurable burst length (`AWLEN`/`ARLEN`) and size (`AWSIZE`/`ARSIZE`)
+* Byte-level write masking via `WSTRB` on a word-addressable RAM
+* FSM-based write and read control paths (`IDLE → WRITE/READ → RESP`)
+* `DECERR` response generation for out-of-range write addresses
+* `AWID`/`ARID` to `BID`/`RID` pass-through for transaction identification
+* Randomized, self-driving testbench (`master_TB`) exercising all channels concurrently
+* FPGA- and ASIC-friendly RTL design practices
+
+---
+
+## 📊 Simulation Waveforms & Schematic
+
+### AXI4 Transaction Waveform
+*(Insert your simulation waveform screenshot here)*
+
+### Synthesis Schematic
+*(Insert your synthesis schematic screenshot here)*
+
+---
+
+## 🛠️ EDA Tools & Technologies
+
+* **HDL:** Verilog
+* **Design Style:** RTL + FSM-based Structural Modeling
+* **Verification:** Testbench-driven simulation (`master_TB`) with randomized stimulus (`$urandom()`)
+* **Protocol:** AMBA AXI4-Full (Write Address, Write Data, Write Response, Read Address, Read Data channels)
+* **Burst Type:** INCR (incrementing burst)
+
+---
+
+## 📘 Learnings / Challenges
+
+> *Learnings/Challenges: (Put some of these in the synth checklist) — check reset in all blocks: 1 or 0*
+
+1. Outstanding transactions mean that multiple transaction requests can be issued by the master to the slave without waiting for the completion of previous transactions.
+
+2. The idea behind `localparam` (added in the Verilog-2001 standard) is to protect its value from accidental or incorrect redefinition by an end user — unlike a `parameter`, a `localparam`'s value cannot be modified through parameter redefinition or a `defparam` statement.
+
+```verilog
+module tb;
+    // Module instantiation override
+    design_ip #(BUS_WIDTH = 64, DATA_WIDTH = 128) d0 ( [port list] );
+
+    // Use of defparam to override
+    defparam d0.FIFO_DEPTH = 128;
+endmodule
+```
+
+3. How do we declare wires/registers that let a hierarchical top module communicate with its instantiated submodule? In Verilog, the rule is: **connect a source to a sink, not a sink to a sink.** So, for a child module inside a parent:
+
+   - **Child output → Parent output**: Not a direct, legal functional connection in the usual sense, since both are outputs — neither is meant to drive the other. Instead, connect both to the same intermediate wire/net, where that net is driven only by the child output and then exported by the parent.
+   - **Child input → Parent output**: Valid only if the parent output drives the child input through a net. In practice, a parent `output` is just a port; internally it is usually a `wire` unless declared otherwise, so it can connect to the child input.
+   - **Child output → Parent input**: Valid. This is the normal case — the child drives a net, and the parent exposes it through an output port.
+   - **Child input → Parent input**: Not a direct driving connection. Two inputs are both receivers, so they aren't meant to drive each other. If you want them tied together, use a shared net that drives both from elsewhere.
+
+4. Learned the difference between byte addressing and bit addressing.
+
+5. Direct Memory Access (DMA) lets certain hardware subsystems access main system memory directly, without going through the CPU for every transfer. [1]
+
+   Without DMA, the CPU has to manage data transfers itself (programmed I/O), which keeps it occupied for the full duration of the transfer and unable to do other work. With DMA, the CPU only sets up the transfer and then moves on to other tasks while the DMA controller (DMAC) handles the actual movement of data, notifying the CPU with an interrupt once it's done. This is especially useful whenever the CPU can't keep pace with the data-transfer rate, or when it needs to stay busy with other work while a slower transfer completes in the background.
+
+6. Can a testbench declare an output signal connected to a DUT input as a `wire`, if it's meant to be driven by some logic? Yes — but with a caveat: if a signal is connected to a DUT input and the testbench logic drives it, it should typically be declared as a `reg` in Verilog (or `logic` in SystemVerilog). Use `wire` only when it's driven by a continuous assignment or by another module's output.
+
+7. **Challenge:** The RAM I designed was word-addressable, while AXI works with byte addressing. This required changes to the design to make the two compatible.
+
+8. **Learning — Why AXI Uses Bursts:**
+   AXI bursts improve bandwidth by sending one address followed by multiple consecutive data transfers, avoiding the overhead of sending a new address for every word. For example, writing 16 words individually would require 16 address handshakes, whereas a burst needs only one address handshake followed by 16 data beats. A single-port RAM can access only **one memory location per clock cycle** (it can't write to two different locations at once, since it has only one write port). If the AXI/CPU side sends byte-addressable data over an 8-byte-wide transfer, two consecutive locations in a 32-bit RAM would need to be written — which is why `AWSIZE` is limited to the RAM's max data width. A burst lets the AXI wrapper perform these writes efficiently, sequentially, over consecutive clock cycles, while keeping the address channel free for future transactions — increasing throughput without needing multiple RAM write ports.
+
+9. **Feature:** Implements concurrent read and write transactions between the manager and subordinate through burst mode.
+
+10. **Learning:** `%0d` means the field width will be just wide enough to show the full value of a variable. `%o` is the octal radix format specifier.
+
+11. **Challenge:** Implementing burst support was difficult once I realized the CPU was pulling data using byte addressing rather than word addressing from the RAM. I had to change a lot of the logic in the AXI interface to make the word-addressable RAM compatible with byte-addressable data from the CPU.
+
+12. **Learning:** In Verilog, a part-select such as `mem[w_addr][31:24]` requires the bit positions (`31` and `24`) to be **compile-time constants**. For example:
+
+```verilog
+for (i = 0; i < 4; i = i + 1)
+    mem[w_addr][8*i+7 : 8*i] <= ...
+```
+
+   This causes a compiler error, because `8*i+7` and `8*i` depend on the loop variable `i`, which isn't treated as a constant part-select in Verilog-2001. This restriction exists because Verilog was originally designed for static hardware — the compiler needs to know exactly which wires connect to which bits at elaboration time, rather than deciding the slice boundaries at runtime. Allowing variable part-selects would effectively require a programmable bit selector (a multiplexer) instead of fixed wiring.
+
+   SystemVerilog later introduced **indexed part-selects** to solve this, allowing expressions like `mem[w_addr][8*i +: 8]` or `mem[w_addr][8*i+7 -: 8]`, where the **width is constant (8 bits)** but the starting position can vary. This is synthesizable and is the recommended parameterized solution if your tool supports SystemVerilog.
+
+---
+
+## 📚 References
+
+*(Add your references here — e.g., ARM AMBA AXI4 Specification, tutorials, videos, etc.)*
+
+---
+
+## 📖 Theory Overview / Challenges
+
+*(Write your own conceptual/theory section here, similar to the "Theory Overview" section in your FIFO README — e.g., AXI4 channel handshaking, burst mechanics, outstanding transactions, address/data decoupling, etc.)*
+
+---

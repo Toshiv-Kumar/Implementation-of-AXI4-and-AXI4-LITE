@@ -59,6 +59,16 @@ The design is verified using a self-driving, randomized testbench (`master_TB`) 
 
 > *Learnings/Challenges: (Put some of these in the synth checklist) — check reset in all blocks: 1 or 0*
 
+**Best Learning:** I nearly derived the industrial standard standard layered testbench myself without knowing what layered testbench actually is. I felt the need of randomized blocks such that there is no biasness in the functional verification and so I used $urandom system directive many times. Along with that I kept a few things seperate such as: 
+Stimulus generation: ✔ You separate the generation of AXI parameters (AWLEN, AWSIZE, AWBURST, etc.) from the DUT logic instead of hardcoding them inside the DUT.
+Driver: ✔ Your always @(posedge aclk_tb) block acts as a driver by performing the AXI handshakes (AWVALID, WVALID, ARVALID, RREADY, etc.) according to the DUT state.
+Protocol awareness: ✔ You're driving transactions based on AXI protocol states (idle, write, read, resp) rather than simply toggling signals randomly.
+Separation from DUT: ✔ The DUT contains only design logic, while the TB generates and controls transactions.
+✘ A monitor that passively observes the AXI interface without driving it.
+✘ A scoreboard/reference model that automatically checks whether every read/write is correct.
+✘ A separate transaction generator (currently generation and driving are mixed in the same always block).
+
+
 1. Outstanding transactions mean that multiple transaction requests can be issued by the master to the slave without waiting for the completion of previous transactions.
 
 2. The idea behind `localparam` (added in the Verilog-2001 standard) is to protect its value from accidental or incorrect redefinition by an end user — unlike a `parameter`, a `localparam`'s value cannot be modified through parameter redefinition or a `defparam` statement.

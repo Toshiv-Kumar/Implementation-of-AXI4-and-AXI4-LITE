@@ -118,3 +118,15 @@ for (i = 0; i < 4; i = i + 1)
 1. AMBA AXI PROTOCOL FULL COURSE by ALL ABOUT VLSI: https://youtube.com/playlist?list=PLqPfWwayuBvOuCQS9yakPb1AQRzIA36np&si=MC9nmSvhB4zcwQ84
 2. AMBA® AXI Protocol Specification
 ---
+
+## Differences between different AXI versions
+### AXI IDs (Concise Notes)
+
+In a **single-master, single-RAM AXI4 system**, transactions are usually processed **in order**, so ID fields provide little practical benefit. The write data channel cannot be overtaken by another burst, and write responses generally return in the same order. This is why **AXI-Lite omits ID signals entirely**.
+
+However, IDs become important when **multiple transactions are outstanding**, **multiple slaves** are connected through an interconnect, or a **slave processes requests internally in parallel**. In such systems, responses may complete out of order. The ID field allows the master to correctly associate each response with the transaction that generated it.
+
+A useful analogy is a restaurant: a waiter takes orders sequentially, but different chefs may prepare meals in parallel, causing a later order to finish first. The order number (ID) ensures each customer receives the correct meal.
+
+**Note:** The diagrams showing **AWID**, **WID**, and **BID** correspond to **AXI3**. AXI3 supported **write-data interleaving**, so each write data beat required a **WID**. AXI4 removed write-data interleaving, making **WID unnecessary**. In AXI4, write data must follow the order of the corresponding write addresses.
+

@@ -120,6 +120,125 @@ for (i = 0; i < 4; i = i + 1)
 
    SystemVerilog later introduced **indexed part-selects** to solve this, allowing expressions like `mem[w_addr][8*i +: 8]` or `mem[w_addr][8*i+7 -: 8]`, where the **width is constant (8 bits)** but the starting position can vary. This is synthesizable and is the recommended parameterized solution if your tool supports SystemVerilog.
 
+### Layered testbench overview:
+A **layered testbench** is a verification methodology, **not a SystemVerilog feature**. Although it became popular with SystemVerilog and UVM, we can absolutely write one in **plain Verilog (.v)** by separating responsibilities into different tasks/modules instead of putting everything inside one `initial` block. The goal is to make the testbench modular, reusable, and easier to maintain as the design grows. 
+### Flat testbench (what most beginners write)
+
+Everything is mixed together:
+
+```text
+initial begin
+    reset;
+
+    // Generate inputs
+    A = 10;
+    B = 20;
+
+    // Drive DUT
+    valid = 1;
+    @(posedge clk);
+
+    // Check outputs
+    if (result != 30)
+        $display("FAIL");
+end
+```
+
+As the DUT becomes larger (UART, AXI, CPU, etc.), this quickly becomes difficult to maintain.
+
+---
+
+## Layered testbench
+
+Instead of mixing everything, divide it into layers.
+
+```text
+              TEST
+                │
+        chooses test case
+                │
+                ▼
+          Stimulus Generator
+     (creates transactions)
+                │
+                ▼
+             Driver
+   (converts transaction to DUT pins)
+                │
+                ▼
+              DUT
+                │
+        ┌───────┴────────┐
+        ▼                ▼
+     Monitor         Reference Model
+ (samples outputs)  (expected result)
+        │                │
+        └───────┬────────┘
+                ▼
+            Scoreboard
+      (compare actual vs expected)
+```
+
+Each block has **one responsibility**, making it easier to extend and debug. ([picture.iczhiku.com][1])
+
+---
+
+## Small Verilog example (Adder)
+
+Instead of one huge `initial` block, write separate tasks.
+
+```verilog
+task generate_transaction;
+begin
+    a = $random;
+    b = $random;
+end
+endtask
+
+task drive;
+begin
+    @(posedge clk);
+    valid = 1;
+end
+endtask
+
+task monitor;
+begin
+    @(posedge clk);
+    dut_result = result;
+end
+endtask
+
+task check;
+begin
+    expected = a + b;
+
+    if (dut_result != expected)
+        $display("FAIL");
+end
+endtask
+
+initial begin
+    repeat (100) begin
+        generate_transaction();
+        drive();
+        monitor();
+        check();
+    end
+end
+```
+
+Notice that the **main test** doesn't know how to drive signals or check results—it simply calls each layer in order.
+
+---
+
+## For my AXI project
+* **Generator**: randomly generates `AWADDR`, `AWLEN`, `AWSIZE`, `WDATA`, etc.
+* **Driver**: performs the AXI handshakes (`AWVALID`, `WVALID`, `ARVALID`, etc.).
+* **Monitor**: observes `BRESP`, `RDATA`, `RLAST`, etc., without driving signals.
+* **Scoreboard**: maintains a software model of RAM and checks that every read/write matches the expected contents.
+
+
 ---
 
 ## 📚 References

@@ -13,7 +13,7 @@ A Verilog-based implementation of an **AXI4-Full slave interface** wrapping a si
 
 This project presents the **design, implementation, and verification of an AXI4-Full slave interface** (`axi_full_wraps_ram`) that sits between an AXI **Master (Manager/CPU)** and a **single-port RAM (Subordinate)**, using Verilog HDL.
 
-The wrapper implements all five AXI4 channels — Write Address (AW), Write Data (W), Write Response (B), Read Address (AR), and Read Data (R) — using independent FSMs for the write and read paths. It handles **INCR burst transactions**, **byte-level write masking (WSTRB)** over a word-addressable RAM, **DECERR** response generation for out-of-range addresses, and **AWID/ARID → BID/RID** pass-through for transaction tracking.
+The wrapper implements all five AXI4 channels — Write Address (AW), Write Data (W), Write Response (B), Read Address (AR), and Read Data (R) — using independent FSMs for the write and read paths. It handles **INCR burst transactions**, **byte-level write masking (WSTRB)** over a word-addressable RAM, and **DECERR** response generation for out-of-range addresses.
 
 The design is verified using a self-driving, randomized testbench (`master_TB`) that exercises all five channels concurrently using `$urandom()` stimulus.
 
@@ -27,7 +27,6 @@ The design is verified using a self-driving, randomized testbench (`master_TB`) 
 * Byte-level write masking via `WSTRB` on a word-addressable RAM
 * FSM-based write and read control paths (`IDLE → WRITE/READ → RESP`)
 * `DECERR` response generation for out-of-range write addresses
-* `AWID`/`ARID` to `BID`/`RID` pass-through for transaction identification
 * Randomized, self-driving testbench (`master_TB`) exercising all channels concurrently
 * FPGA- and ASIC-friendly RTL design practices
 
@@ -36,10 +35,13 @@ The design is verified using a self-driving, randomized testbench (`master_TB`) 
 ## 📊 Simulation Waveforms & Schematic
 
 ### AXI4 Transaction Waveform
-*(Insert your simulation waveform screenshot here)*
+<img width="1221" height="942" alt="image" src="https://github.com/user-attachments/assets/63b8f5d9-690a-4285-9003-2bfc341f8d7c" />
 
-### Synthesis Schematic
-*(Insert your synthesis schematic screenshot here)*
+
+### Synthesis and RTL Schematic
+<img width="1067" height="642" alt="image" src="https://github.com/user-attachments/assets/7581c9c9-4687-4ec4-8b17-53a3159e3554" />
+##### Synthesized Schematic below:
+<img width="1075" height="530" alt="image" src="https://github.com/user-attachments/assets/d612846d-fb37-46a0-b265-a63da89579cb" />
 
 ---
 
@@ -113,11 +115,5 @@ for (i = 0; i < 4; i = i + 1)
 ## 📚 References
 
 *(Add your references here — e.g., ARM AMBA AXI4 Specification, tutorials, videos, etc.)*
-
----
-
-## 📖 Theory Overview / Challenges
-
-*(Write your own conceptual/theory section here, similar to the "Theory Overview" section in your FIFO README — e.g., AXI4 channel handshaking, burst mechanics, outstanding transactions, address/data decoupling, etc.)*
 
 ---

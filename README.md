@@ -115,5 +115,6 @@ for (i = 0; i < 4; i = i + 1)
 ## 📚 References
 
 *(Add your references here — e.g., ARM AMBA AXI4 Specification, tutorials, videos, etc.)*
-
+1. AMBA AXI PROTOCOL FULL COURSE by ALL ABOUT VLSI: https://youtube.com/playlist?list=PLqPfWwayuBvOuCQS9yakPb1AQRzIA36np&si=MC9nmSvhB4zcwQ84
+2. AMBA® AXI Protocol Specification
 ---

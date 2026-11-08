@@ -258,3 +258,56 @@ A useful analogy is a restaurant: a waiter takes orders sequentially, but differ
 
 **Note:** The diagrams showing **AWID**, **WID**, and **BID** correspond to **AXI3**. AXI3 supported **write-data interleaving**, so each write data beat required a **WID**. AXI4 removed write-data interleaving, making **WID unnecessary**. In AXI4, write data must follow the order of the corresponding write addresses.
 
+## Implementation-of-AXI4-and-AXI4-LITE — Protocol Understanding
+
+Why the protocol exists: AXI exists so bus traffic doesn’t stall waiting for one slow transfer to finish. Splitting a transaction into five independent channels (write address, write data, write response, read address, read data) lets a master issue a new address before the previous transfer’s data phase has even completed, and lets reads and writes proceed fully independently of each other — which is why AXI underlies high-bandwidth interconnects where APB’s single-outstanding-transaction model would bottleneck.
+
+How a transaction takes place (a single write):
+
+Master drives AWADDR, AWLEN (burst length), AWSIZE, AWBURST and asserts AWVALID.
+The address transfers on the clock edge where AWVALID and AWREADY are both high — this VALID/READY handshake is the one rule every AXI channel follows, and it’s what lets either side insert wait cycles without breaking the protocol.
+Master drives WDATA and WSTRB per beat, asserting WVALID; slave asserts WREADY when ready. Repeats for AWLEN+1 beats, with WLAST on the final one.
+Once all beats are accepted, the slave returns BRESP (OKAY/DECERR) and asserts BVALID; the master asserts BREADY to complete it.
+---
+A read mirrors this with ARADDR/ARVALID/ARREADY and RDATA/RRESP/RLAST/RVALID/RREADY — no separate response channel is needed since RRESP rides with the data itself.
+
+What each important signal does:
+
+AWADDR/ARADDR — burst start address
+AWLEN/ARLEN — beats per burst, minus 1
+AWVALID/AWREADY (and the matching pair on every other channel) — the handshake: a transfer happens only on the cycle both are high
+WDATA/WSTRB — the data beat and which bytes of it are actually meant to be written
+RDATA/RRESP, BRESP — returned data/status
+WLAST/RLAST — marks the final beat
+
+How data moves between components: Write: address then data beats flow master→slave, response flows back only after all data is accepted. Read: address flows master→slave, data flows back slave→master beat by beat. Because channels are independent, a read address can be outstanding while write data for an earlier write is still being sent.
+
+Different operating conditions: Back-to-back bursts (new AWVALID before the previous response completes); slave not ready (master just holds VALID/data stable — nothing is lost); partial-word writes (WSTRB masks the untouched bytes); out-of-range address (handshake still completes, but BRESP returns DECERR instead of OKAY).
+
+What can go wrong: Deasserting VALID before READY is actually seen (a protocol violation); byte-vs-word addressing mismatches when the underlying memory isn’t natively byte-addressable (this was a real bug I hit); mishandling WLAST/RLAST, which can truncate or overrun a burst; without a monitor/scoreboard, data-integrity errors in a long burst are easy to miss from waveform snapshots alone.
+---
+## Implementation-of-AXI4-and-AXI4-LITE
+
+Q: Tell me about your project.
+
+Problem: AMBA AXI exists because a simple shared bus stalls the whole system during a slow transfer — only one source can drive it at a time. AXI solves this by splitting a transaction into independent channels (address, data, response) so address and data phases can overlap, and a master can issue a new address before the previous transaction’s data phase even finishes. The goal was to build an AXI4-Full slave wrapper around a simple RAM that exposes all five channels correctly.
+
+Approach: I designed independent FSMs for the write and read paths rather than one shared control path, since AXI’s channels are meant to progress concurrently. Each FSM runs an address phase, a data phase, and (for writes) a response phase — matching the real handshake, where a transfer only completes on the clock edge where VALID and READY are both high.
+
+Implementation: AWADDR/ARADDR carry the starting address, AWLEN/ARLEN the burst length, WDATA/WSTRB the write payload and byte mask, and RDATA/RRESP/BRESP return read data and status. Since the RAM underneath is word-addressable but AXI is byte-addressed, most of the real effort went into translating burst addresses and WSTRB masks into the correct word offset and byte lane on every beat. INCR bursts auto-increment the address; a DECERR response fires whenever the computed address runs past the RAM’s valid range.
+
+Testing: A randomized, self-driving testbench drives both channels concurrently with $urandom-based address, data, and wait-state stimulus, checked against waveforms for correct handshake timing and data integrity across bursts.
+
+Result: A working AXI4-Full slave handling INCR burst reads/writes, byte-masked partial writes, and out-of-range DECERR responses, fully simulation-verified.
+
+Challenges: The byte-vs-word addressing mismatch was the hardest bug — early versions wrote to the wrong word boundary on non-aligned bursts, fixed by computing the word index and byte-lane selection explicitly rather than assuming a direct pass-through. The next step would be a monitor and software scoreboard, since correctness is still checked by reading waveforms rather than an automatic checker.
+---
+## Implementation-of-AXI4-and-AXI4-LITE
+🧠 Design Decisions
+Chose INCR burst mode exclusively (not FIXED/WRAP) since the target RAM is straightforward sequential memory, matching the design’s own parameter comment — this avoided the extra address-wrap logic WRAP would need for a use case that doesn’t require it.
+Used independent FSMs for the write and read paths rather than one shared FSM, so read and write transactions can proceed concurrently — this is what directly enables concurrent read/write support.
+Reserved the top of the 16-location address range (write_addr_reg >= 4'b1110) to deliberately trigger DECERR responses, giving the testbench a way to exercise the slave-error path without needing a genuinely out-of-range address.
+⚖️ Trade-offs and Outcomes
+Built the testbench with separated, driver-like stimulus logic instead of one monolithic initial block — cost more structure up front, but surfaced the word-vs-byte addressing mismatch that a flatter testbench likely would have masked, and ended up mirroring real layered-testbench practice.
+Skipped a full scoreboard/reference model in favor of manual waveform checking — got a working, verified design faster, with the scoreboard identified as the clear next step for a more rigorous environment.
+Kept the memory small (depth=16) rather than a larger address space — made waveforms small enough to manually trace while debugging, at the cost of not stress-testing a wider address range.
